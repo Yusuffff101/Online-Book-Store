@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-gray-900">
+<head>
+    <meta charset="UTF-M-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Async Bookstore</title>
+    <!-- Load Tailwind CSS --><script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Simple transition for modal */
+        .modal {
+            transition: opacity 0.25s ease;
+        }
+        .modal-content {
+            transition: transform 0.25s ease;
+        }
+    </style>
+</head>
+<body class="h-full font-sans text-gray-200">
+    <div class="container mx-auto p-8 max-w-5xl">
+        <h1 class="text-4xl font-bold text-center mb-12 text-white">The Async Bookstore</h1>
+        
+        <!-- Book Grid --><div id="book-grid" class="grid grid-cols-1 md:grid-cols-3 gap-8">
+            <!-- Books will be injected here by JavaScript --></div>
+    </div>
+
+    <!-- Checkout Modal --><div id="checkout-modal" class="modal fixed inset-0 w-full h-full flex items-center justify-center bg-black bg-opacity-75 p-4 z-50 pointer-events-none opacity-0">
+        <div class="modal-content transform -translate-y-10 p-6 bg-gray-800 rounded-lg shadow-2xl w-full max-w-md">
+            <h2 class="text-2xl font-semibold mb-4 text-white">Complete Your Order</h2>
+            <p class="mb-2 text-gray-300">You are buying: <strong id="modal-book-title" class="text-white"></strong></p>
+            
+            <!-- Checkout Form --><form id="checkout-form">
+                <input type="hidden" id="modal-book-id">
+                
+                <div class="mb-4">
+                    <label for="user_id" class="block text-sm font-medium text-gray-300 mb-1">User ID</label>
+                    <input type="text" id="user_id" name="user_id" class="w-full p-2 rounded-md bg-gray-700 text-white border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="e.g., alex123" required>
+                </div>
+                
+                <div class="mb-6">
+                    <label for="shipping_address" class="block text-sm font-medium text-gray-300 mb-1">Shipping Address</label>
+                    <input type="text" id="shipping_address" name="shipping_address" class="w-full p-2 rounded-md bg-gray-700 text-white border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="123 Code Street" required>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <button type="button" id="modal-cancel-btn" class="py-2 px-4 rounded-md text-gray-300 bg-gray-600 hover:bg-gray-500 transition-colors">Cancel</button>
+                    <button type="submit" id="modal-confirm-btn" class="py-2 px-4 rounded-md text-white bg-blue-600 hover:bg-blue-500 font-semibold transition-colors">
+                        Place Order
+                        <!-- Loading spinner (hidden by default) --><svg id="loading-spinner" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline-block hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Global Message Box --><div id="message-box" class="fixed bottom-5 right-5 p-4 rounded-lg shadow-lg text-white max-w-sm z-50 opacity-0 transform translate-y-10 transition-all duration-300">
+        <span id="message-text"></span>
+    </div>
+
+    <script>
+        // Mock data for our bookstore
+        const books = [
+            { id: "book_987", title: "Designing Data-Intensive Applications", author: "Martin Kleppmann", price: "49.99" },
+            { id: "book_123", title: "The Pragmatic Programmer", author: "David Thomas, Andrew Hunt", price: "44.99" },
+            { id: "book_456", title: "Clean Architecture", author: "Robert C. Martin", price: "39.99" },
+            { id: "book_789", title: "Refactoring: Improving the Design of Existing Code", author: "Martin Fowler", price: "42.50" },
+            { id: "book_010", title: "Code Complete", author: "Steve McConnell", price: "55.00" },
+            { id: "book_112", title: "Domain-Driven Design", author: "Eric Evans", price: "60.00" },
+            { id: "book_314", title: "Grokking Algorithms", author: "Aditya Bhargava", price: "30.00" },
+            { id: "book_592", title: "The Mythical Man-Month", author: "Frederick Brooks Jr.", price: "25.00" },
+            { id: "book_653", title: "Structure and Interpretation of Computer Programs", author: "Abelson, Sussman, Sussman", price: "70.00" }
+        ];
+
+        // API URL
+        const API_URL = "http://127.0.0.1:8000/place-order";
+
+        document.addEventListener("DOMContentLoaded", () => {
+            const bookGrid = document.getElementById("book-grid");
+            const modal = document.getElementById("checkout-modal");
+            const modalContent = modal.querySelector(".modal-content");
+            const modalBookTitle = document.getElementById("modal-book-title");
+            
+            const modalBookId = document.getElementById("modal-book-id");
+            const modalForm = document.getElementById("checkout-form");
+            const modalCancelBtn = document.getElementById("modal-cancel-btn");
+            const modalConfirmBtn = document.getElementById("modal-confirm-btn");
+            
+            const loadingSpinner = document.getElementById("loading-spinner");
+            
+            // --- Populate Book Grid ---
+            let bookHtml = "";
+            books.forEach(book => {
+                bookHtml += `
+                <div class="bg-gray-800 rounded-lg shadow-lg overflow-hidden flex flex-col">
+                    <!-- Removed image tag --><div class="p-6 flex-grow flex flex-col">
+                        <h3 class="text-xl font-semibold mb-2 text-white">${book.title}</h3>
+                        <p class="text-gray-400 mb-4 flex-grow">${book.author}</p>
+                        <div class="flex justify-between items-center">
+                            <span class="text-2xl font-bold text-white">$${book.price}</span>
+                            <button 
+                                data-book-id="${book.id}" 
+                                data-book-title="${book.title}"
+                                class="buy-btn bg-blue-600 hover:bg-blue-500 text-white font-bold py-2 px-4 rounded-lg transition-colors">
+                                Place Order
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                `;
+            });
+            bookGrid.innerHTML = bookHtml;
+
+            // --- Modal Functions ---
+            function openModal(book) {
+                modalBookTitle.textContent = book.title;
+                modalBookId.value = book.id;
+                modal.classList.remove("pointer-events-none", "opacity-0");
+                modalContent.classList.remove("-translate-y-10");
+            }
+
+            function closeModal() {
+                modal.classList.add("pointer-events-none", "opacity-0");
+                modalContent.classList.add("-translate-y-10");
+                modalForm.reset();
+                setLoading(false);
+            }
+
+            // --- Show Message Box ---
+            function showMessage(message, isError = false) {
+                const messageBox = document.getElementById("message-box");
+                const messageText = document.getElementById("message-text");
+
+                messageText.textContent = message;
+                messageBox.className = "fixed bottom-5 right-5 p-4 rounded-lg shadow-lg text-white max-w-sm z-50 transition-all duration-300"; // Reset classes
+                
+                if (isError) {
+                    messageBox.classList.add("bg-red-600");
+                } else {
+                    messageBox.classList.add("bg-green-600");
+                }
+
+                // Show message
+                messageBox.classList.remove("opacity-0", "translate-y-10");
+
+                // Hide after 3 seconds
+                setTimeout(() => {
+                    messageBox.classList.add("opacity-0", "translate-y-10");
+                }, 3000);
+            }
+
+            // --- Set Loading State ---
+            function setLoading(isLoading) {
+                if (isLoading) {
+                    modalConfirmBtn.disabled = true;
+                    loadingSpinner.classList.remove("hidden");
+                } else {
+                    modalConfirmBtn.disabled = false;
+                    loadingSpinner.classList.add("hidden");
+                }
+            }
+
+            // --- Event Listeners ---
+            
+            // Listen for clicks on any "Buy" button
+            bookGrid.addEventListener("click", (e) => {
+                if (e.target.classList.contains("buy-btn")) {
+                    const book = {
+                        id: e.target.dataset.bookId,
+                        title: e.target.dataset.bookTitle
+                    };
+                    openModal(book);
+                }
+            });
+
+            // Close modal
+            modalCancelBtn.addEventListener("click", closeModal);
+            modal.addEventListener("click", (e) => {
+                if (e.target === modal) {
+                    closeModal();
+                }
+            });
+
+            // Handle form submission
+            modalForm.addEventListener("submit", async (e) => {
+                e.preventDefault();
+                setLoading(true);
+
+                // 1. Get form data
+                const userId = document.getElementById("user_id").value;
+                const shippingAddress = document.getElementById("shipping_address").value;
+                const bookId = document.getElementById("modal-book-id").value;
+                
+                // 2. Construct the order payload
+                const orderPayload = {
+                    user_id: userId,
+                    items: [
+                        { item_id: bookId, quantity: 1 }
+                    ],
+                    shipping_address: shippingAddress
+                };
+
+                // 3. Send to FastAPI backend
+                try {
+                    const response = await fetch(API_URL, {
+                        method: "POST",
+                        headers: {
+                            "Content-Type": "application/json",
+                        },
+                        body: JSON.stringify(orderPayload),
+                    });
+
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        // Handle server-side errors (like 500)
+                        throw new Error(result.detail || "An unknown error occurred.");
+                    }
+
+                    // Success!
+                    showMessage(result.message || "Order Received!");
+                    closeModal();
+
+                } catch (error) {
+                    // Handle network errors or server errors
+                    console.error("Error placing order:", error);
+                    showMessage(`Error: ${error.message}`, true);
+                    setLoading(false); // Only stop loading on error, as success closes modal
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+
